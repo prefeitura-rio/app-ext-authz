@@ -357,8 +357,8 @@ func TestService_GetHealth_Integration(t *testing.T) {
 		t.Fatal("Expected config field to be present")
 	}
 
-	if config["recaptcha_version"] != float64(3) {
-		t.Errorf("Expected recaptcha_version to be 3, got %v", config["recaptcha_version"])
+	if config["recaptcha_project_id"] != "test-project" {
+		t.Errorf("Expected recaptcha_project_id to be 'test-project', got %v", config["recaptcha_project_id"])
 	}
 
 	if config["failure_mode"] != "fail_open" {

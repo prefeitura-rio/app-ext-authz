@@ -1,5 +1,5 @@
 {
-  description = "Envoy External Authorization Service for reCAPTCHA";
+  description = "Envoy External Authorization Service for reCAPTCHA Enterprise";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -31,7 +31,7 @@
           ];
 
           shellHook = ''
-            echo "🚀 Envoy reCAPTCHA Authz Development Environment"
+            echo "🚀 Envoy reCAPTCHA Enterprise Authz Development Environment"
             echo "Available commands:"
             echo "  just run      - Run the service locally"
             echo "  just test     - Run tests"
@@ -49,7 +49,7 @@
           vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
           meta = with pkgs.lib; {
-            description = "Envoy External Authorization Service for reCAPTCHA";
+            description = "Envoy External Authorization Service for reCAPTCHA Enterprise";
             homepage = "https://github.com/prefeitura-rio/app-ext-authz";
             license = licenses.mit;
             platforms = platforms.linux ++ platforms.darwin;

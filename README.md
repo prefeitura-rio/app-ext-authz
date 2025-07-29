@@ -1,10 +1,10 @@
-# Envoy External Authorization Service for reCAPTCHA
+# Envoy External Authorization Service for reCAPTCHA Enterprise
 
-A high-performance external authorization service for Envoy Proxy that validates reCAPTCHA tokens. This service integrates with Envoy's `ext_authz` filter to provide reCAPTCHA validation for your APIs.
+A high-performance external authorization service for Envoy Proxy that validates reCAPTCHA Enterprise tokens. This service integrates with Envoy's `ext_authz` filter to provide reCAPTCHA Enterprise validation for your APIs.
 
 ## Features
 
-- **Multi-version support**: reCAPTCHA v2 and v3 validation
+- **Enterprise-grade security**: Google Cloud reCAPTCHA Enterprise integration
 - **High performance**: HTTP-based authorization with caching
 - **Resilient**: Circuit breaker pattern with graceful degradation
 - **Observable**: Full OpenTelemetry integration with traces, metrics, and logs
@@ -15,9 +15,9 @@ A high-performance external authorization service for Envoy Proxy that validates
 ## Architecture
 
 ```
-Client Request → Envoy Proxy → ext_authz Filter → This Service → Google reCAPTCHA API
+Client Request → Envoy Proxy → ext_authz Filter → This Service → Google reCAPTCHA Enterprise API
                                                       ↓
-                                              Cache (Redis/Memory)
+                                              Cache (Redis)
                                                       ↓
                                               Circuit Breaker
                                                       ↓
@@ -28,7 +28,7 @@ Client Request → Envoy Proxy → ext_authz Filter → This Service → Google 
 
 1. Client sends request with `X-Recaptcha-Token` header
 2. Envoy intercepts and calls this authorization service
-3. Service validates token with Google's reCAPTCHA API
+3. Service validates token with Google's reCAPTCHA Enterprise API
 4. Returns ALLOW/DENY decision to Envoy
 5. Envoy forwards or blocks the request accordingly
 
@@ -41,7 +41,7 @@ Client Request → Envoy Proxy → ext_authz Filter → This Service → Google 
 | `RECAPTCHA_PROJECT_ID` | Google Cloud project ID | - | Yes |
 | `RECAPTCHA_SITE_KEY` | reCAPTCHA site key | - | Yes |
 | `RECAPTCHA_ACTION` | Expected action name | authz | No |
-| `RECAPTCHA_V3_THRESHOLD` | Score threshold (0.0-1.0) | 0.5 | No |
+| `RECAPTCHA_V3_THRESHOLD` | Score threshold (0.0-1.0) for Enterprise | 0.5 | No |
 | `GOOGLE_API_TIMEOUT_SECONDS` | Timeout for Google API calls | 5 | No |
 | `CACHE_TTL_SECONDS` | Cache TTL for successful validations | 30 | No |
 | `CACHE_FAILED_TTL_SECONDS` | Cache TTL for failed validations | 300 | No |
@@ -89,7 +89,7 @@ This is the main endpoint that Envoy calls for authorization decisions.
 
 **Response Headers:**
 - `X-Recaptcha-Status`: `valid|invalid|degraded|timeout`
-- `X-Recaptcha-Score`: Score value (v3 only)
+- `X-Recaptcha-Score`: Score value (Enterprise)
 - `X-Recaptcha-Cache`: `hit|miss`
 
 ### Health Check
@@ -206,22 +206,23 @@ just test-load
 ```bash
 docker build -t recaptcha-authz .
 docker run -p 8080:8080 \
-  -e RECAPTCHA_SECRET_KEY=your_secret \
-  -e RECAPTCHA_VERSION=3 \
+  -e RECAPTCHA_PROJECT_ID=your-project-id \
+  -e RECAPTCHA_SITE_KEY=your_site_key \
+  -e RECAPTCHA_ACTION=authz \
   recaptcha-authz
 ```
 
 ### Kubernetes
 
-1. **Create secret:**
+1. **Create secret (if needed for additional configuration):**
    ```yaml
    apiVersion: v1
    kind: Secret
    metadata:
-     name: recaptcha-secret
+     name: recaptcha-config
    type: Opaque
    data:
-     recaptcha-secret-key: <base64-encoded-secret>
+     # Add any additional secrets if needed
    ```
 
 2. **Deploy service:**
