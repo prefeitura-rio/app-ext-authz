@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  recaptcha-authz:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - RECAPTCHA_PROJECT_ID=rj-superapp-staging
+      - RECAPTCHA_SITE_KEY=YOUR_RECAPTCHA_SITE_KEY
+      - RECAPTCHA_ACTION=authz
+      - RECAPTCHA_V3_THRESHOLD=0.5
+      - GOOGLE_API_TIMEOUT_SECONDS=5
+      - CACHE_TTL_SECONDS=30
+      - CACHE_FAILED_TTL_SECONDS=300
+      - REDIS_URL=redis://redis:6379
+      - FAILURE_MODE=fail_open
+      - CIRCUIT_BREAKER_ENABLED=true
+      - CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
+      - CIRCUIT_BREAKER_RECOVERY_TIME_SECONDS=60
+      - HEALTH_CHECK_INTERVAL_SECONDS=30
+      - OTEL_SERVICE_NAME=recaptcha-authz
+      - LOG_LEVEL=debug
+      - PORT=8080
+      - MOCK_MODE=true
+    depends_on:
+      - redis
+    networks:
+      - recaptcha-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - recaptcha-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: SignOz for local observability
+  signoz:
+    image: signoz/signoz:latest
+    ports:
+      - "3301:3301"
+    environment:
+      - SIGNOZ_DB_URL=sqlite:///signoz.db
+    volumes:
+      - signoz-data:/var/lib/signoz
+    networks:
+      - recaptcha-network
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  signoz-data:
+
+networks:
+  recaptcha-network:
+    driver: bridge 
