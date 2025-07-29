@@ -1,50 +1,57 @@
-# Justfile for Envoy reCAPTCHA Authz Service
+# Justfile for Envoy reCAPTCHA Enterprise External Authorization Service
 
-# Default target
+# Default recipe
 default:
+    @echo "🚀 Envoy reCAPTCHA Enterprise External Authorization Service"
+    @echo "Available commands:"
     @just --list
-
-# Run the service locally
-run:
-    @echo "🚀 Starting recaptcha-authz service..."
-    @go run cmd/main.go
-
-# Run with hot reload (requires air)
-dev:
-    @echo "🔄 Starting development server with hot reload..."
-    @air
 
 # Build the binary
 build:
     @echo "🔨 Building binary..."
     @go build -o bin/recaptcha-authz cmd/main.go
 
-# Run tests
-test:
-    @echo "🧪 Running tests..."
-    @go test -v ./...
+# Run locally
+run:
+    @echo "🚀 Running locally..."
+    @go run cmd/main.go
 
-# Run tests with coverage
-test-coverage:
-    @echo "📊 Running tests with coverage..."
-    @go test -v -coverprofile=coverage.out ./...
-    @go tool cover -html=coverage.out -o coverage.html
-    @echo "📄 Coverage report generated: coverage.html"
+# Run in mock mode (bypasses Google API)
+run-mock:
+    @echo "🎭 Running in mock mode..."
+    @MOCK_MODE=true go run cmd/main.go
 
-# Run integration tests
-test-integration:
-    @echo "🔗 Running integration tests..."
-    @go test -v -tags=integration ./...
+# Run in production mode (real Google API)
+run-prod:
+    @echo "🚀 Running in production mode..."
+    @MOCK_MODE=false go run cmd/main.go
 
-# Run load tests
-test-load:
-    @echo "⚡ Running load tests..."
-    @go test -v -tags=load ./test/load/
+# Build Docker image
+docker-build:
+    @echo "🐳 Building Docker image..."
+    @docker build -t recaptcha-authz:latest .
 
-# Run benchmarks
-bench:
-    @echo "🏃 Running benchmarks..."
-    @go test -bench=. ./...
+# Run with Docker Compose
+docker-compose:
+    @echo "🐳 Running with Docker Compose..."
+    @docker-compose up --build
+
+# Clean up
+clean:
+    @echo "🧹 Cleaning up..."
+    @rm -rf bin/
+    @go clean -cache
+
+# Install dependencies
+install:
+    @echo "📦 Installing dependencies..."
+    @go mod download
+
+# Tidy dependencies
+tidy:
+    @echo "🧹 Tidying dependencies..."
+    @go mod tidy
+    @go mod verify
 
 # Lint code
 lint:
@@ -57,60 +64,19 @@ fmt:
     @go fmt ./...
     @goimports -w .
 
-# Tidy dependencies
-tidy:
-    @echo "🧹 Tidying dependencies..."
-    @go mod tidy
-    @go mod verify
-
-# Generate mocks
-mocks:
-    @echo "🎭 Generating mocks..."
-    @mockgen -source=internal/recaptcha/client.go -destination=internal/recaptcha/mocks.go
-
-# Build Docker image
-docker-build:
-    @echo "🐳 Building Docker image..."
-    @docker build -t recaptcha-authz:latest .
-
-# Clean up
-clean:
-    @echo "🧹 Cleaning up..."
-    @rm -rf bin/
-    @rm -f coverage.out coverage.html
-    @go clean -cache
-
-# Install dependencies
-install:
-    @echo "📦 Installing dependencies..."
-    @go mod download
-    @go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-    @go install github.com/vektra/mockery/v2@latest
-    @go install github.com/cosmtrek/air@latest
-
 # Show help
 help:
     @echo "Available commands:"
     @just --list
 
-# Run with mock mode (bypasses Google API)
-run-mock:
-    @echo "🎭 Running in mock mode..."
-    @MOCK_MODE=true go run cmd/main.go
-
-# Test the service with curl
-test-curl:
-    @echo "🌐 Testing service with curl..."
-    @curl -X POST http://localhost:8080/authz \
+# Test the service with curl (HTTP mode)
+test-curl-http:
+    @echo "🌐 Testing service with curl (HTTP mode)..."
+    @curl -X POST http://localhost:8000 \
         -H "X-Recaptcha-Token: test_token" \
         -v
 
-# Health check
-health:
-    @echo "🏥 Checking service health..."
-    @curl -X GET http://localhost:8080/health
-
-# Metrics
-metrics:
-    @echo "📊 Getting metrics..."
-    @curl -X GET http://localhost:8080/metrics 
+# Test the service with curl (gRPC mode - requires grpcurl)
+test-curl-grpc:
+    @echo "🌐 Testing service with grpcurl (gRPC mode)..."
+    @grpcurl -plaintext -d '{"attributes": {"request": {"http": {"headers": {"x-recaptcha-token": "test_token"}}}}}' localhost:9000 envoy.service.auth.v3.Authorization/Check 

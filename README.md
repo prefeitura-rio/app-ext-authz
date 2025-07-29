@@ -75,44 +75,28 @@ OTEL_ENDPOINT=http://signoz:4317
 
 ### Authorization Endpoint
 
-**POST** `/authz`
+The service implements the Envoy `ext_authz` filter interface, supporting both HTTP and gRPC protocols.
 
-This is the main endpoint that Envoy calls for authorization decisions.
+**HTTP Mode:**
+- **Port**: 8000
+- **Method**: POST
+- **Headers**: `X-Recaptcha-Token` (required)
+
+**gRPC Mode:**
+- **Port**: 9000
+- **Service**: `envoy.service.auth.v3.Authorization`
+- **Method**: `Check`
 
 **Request Headers:**
-- `X-Recaptcha-Token`: The reCAPTCHA token to validate
+- `X-Recaptcha-Token`: The reCAPTCHA Enterprise token to validate
 
 **Response:**
 - **200 OK**: Request allowed
 - **403 Forbidden**: Request denied
-- **500 Internal Server Error**: Service error
 
 **Response Headers:**
-- `X-Recaptcha-Status`: `valid|invalid|degraded|timeout`
-- `X-Recaptcha-Score`: Score value (Enterprise)
-- `X-Recaptcha-Cache`: `hit|miss`
-
-### Health Check
-
-**GET** `/health`
-
-Returns service health status.
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-01T00:00:00Z",
-  "google_api": "healthy",
-  "circuit_breaker": "closed"
-}
-```
-
-### Metrics
-
-**GET** `/metrics`
-
-Prometheus metrics endpoint.
+- `X-Ext-Authz-Check-Result`: `allowed|denied`
+- `X-Ext-Authz-Check-Received`: Request details
 
 ## Envoy Configuration
 
@@ -126,7 +110,7 @@ http_filters:
     transport_api_version: V3
     http_service:
       server_uri:
-        uri: "http://recaptcha-authz:8080"
+        uri: "http://recaptcha-authz:8000"
         cluster: "recaptcha_authz"
         timeout: 2s
       authorization_request:
@@ -136,9 +120,22 @@ http_filters:
       authorization_response:
         allowed_upstream_headers:
           patterns:
-          - exact: "x-recaptcha-status"
-          - exact: "x-recaptcha-score"
-          - exact: "x-recaptcha-cache"
+          - exact: "x-ext-authz-check-result"
+          - exact: "x-ext-authz-check-received"
+```
+
+### gRPC Mode
+
+```yaml
+http_filters:
+- name: envoy.filters.http.ext_authz
+  typed_config:
+    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+    transport_api_version: V3
+    grpc_service:
+      envoy_grpc:
+        cluster_name: "recaptcha_authz_grpc"
+      timeout: 2s
 ```
 
 ## Development
@@ -173,30 +170,38 @@ http_filters:
    just run
    ```
 
-3. **Run tests:**
+3. **Run in mock mode (for development):**
    ```bash
-   just test
+   just run-mock
    ```
 
 4. **Run with Docker:**
    ```bash
-   just docker-build
-   just docker-run
+   just docker-compose
    ```
 
 ### Testing
 
-The project includes comprehensive tests:
+The service can be tested using curl or grpcurl:
 
-- **Unit tests**: Core validation logic
-- **Integration tests**: HTTP endpoints
-- **Load tests**: Performance testing with mocks
-- **Mock mode**: Bypass Google API for development
-
-Run all tests:
+**HTTP Mode:**
 ```bash
-just test
-just test-load
+curl -X POST http://localhost:8000 \
+  -H "X-Recaptcha-Token: your_token_here" \
+  -v
+```
+
+**gRPC Mode (requires grpcurl):**
+```bash
+grpcurl -plaintext \
+  -d '{"attributes": {"request": {"http": {"headers": {"x-recaptcha-token": "your_token_here"}}}}}' \
+  localhost:9000 envoy.service.auth.v3.Authorization/Check
+```
+
+**Using justfile:**
+```bash
+just test-curl-http
+just test-curl-grpc
 ```
 
 ## Deployment
@@ -205,11 +210,11 @@ just test-load
 
 ```bash
 docker build -t recaptcha-authz .
-docker run -p 8080:8080 \
+docker run -p 8000:8000 -p 9000:9000 \
   -e RECAPTCHA_PROJECT_ID=your-project-id \
   -e RECAPTCHA_SITE_KEY=your_site_key \
   -e RECAPTCHA_ACTION=authz \
-  recaptcha-authz
+  recaptcha-authz --http=8000 --grpc=9000
 ```
 
 ### Kubernetes

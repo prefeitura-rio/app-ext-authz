@@ -26,18 +26,19 @@
             gopls
             go-tools
             gotools
-            air
             golangci-lint
+            grpcurl
           ];
 
           shellHook = ''
             echo "🚀 Envoy reCAPTCHA Enterprise Authz Development Environment"
             echo "Available commands:"
-            echo "  just run      - Run the service locally"
-            echo "  just test     - Run tests"
-            echo "  just build    - Build the binary"
-            echo "  just docker   - Build and run with Docker"
-            echo "  just load     - Run load tests"
+            echo "  just run         - Run the service locally"
+            echo "  just run-mock    - Run in mock mode"
+            echo "  just build       - Build the binary"
+            echo "  just docker-compose - Run with Docker Compose"
+            echo "  just test-curl-http  - Test HTTP endpoint"
+            echo "  just test-curl-grpc  - Test gRPC endpoint"
           '';
         };
 

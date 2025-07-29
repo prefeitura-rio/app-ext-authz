@@ -16,17 +16,16 @@ spec:
     metadata:
       labels:
         app: recaptcha-authz
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
-        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: recaptcha-authz
         image: ghcr.io/prefeitura-rio/app-ext-authz:latest
         ports:
-        - containerPort: 8080
+        - containerPort: 8000
           name: http
+          protocol: TCP
+        - containerPort: 9000
+          name: grpc
           protocol: TCP
         envFrom:
         - secretRef:
@@ -38,22 +37,8 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "2000m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 15
-          periodSeconds: 20
-          timeoutSeconds: 3
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          timeoutSeconds: 3
-          failureThreshold: 3
+        # Note: No health probes since this is an Envoy ext_authz service
+        # The service is considered healthy if it responds to authorization requests
         securityContext:
           runAsNonRoot: true
           runAsUser: 1001
@@ -77,10 +62,14 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-  - port: 8080
-    targetPort: 8080
+  - port: 8000
+    targetPort: 8000
     protocol: TCP
     name: http
+  - port: 9000
+    targetPort: 9000
+    protocol: TCP
+    name: grpc
   selector:
     app: recaptcha-authz
 

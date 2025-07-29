@@ -2,11 +2,10 @@ version: '3.8'
 
 services:
   recaptcha-authz:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     ports:
-      - "8080:8080"
+      - "8000:8000"  # HTTP port
+      - "9000:9000"  # gRPC port
     environment:
       - RECAPTCHA_PROJECT_ID=rj-superapp-staging
       - RECAPTCHA_SITE_KEY=YOUR_RECAPTCHA_SITE_KEY
@@ -21,55 +20,39 @@ services:
       - CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
       - CIRCUIT_BREAKER_RECOVERY_TIME_SECONDS=60
       - HEALTH_CHECK_INTERVAL_SECONDS=30
+      - OTEL_ENDPOINT=http://signoz-collector:4317
       - OTEL_SERVICE_NAME=recaptcha-authz
       - LOG_LEVEL=debug
-      - PORT=8080
       - MOCK_MODE=true
     depends_on:
       - redis
-    networks:
-      - recaptcha-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    command: ["./recaptcha-authz", "--http=8000", "--grpc=9000"]
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     volumes:
-      - redis-data:/data
-    networks:
-      - recaptcha-network
-    restart: unless-stopped
+      - redis_data:/data
     command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  # Optional: SignOz for local observability
-  signoz:
-    image: signoz/signoz:latest
+  # Optional: SignOz for observability
+  signoz-collector:
+    image: signoz/signoz-otel-collector:latest
     ports:
-      - "3301:3301"
+      - "4317:4317"
     environment:
-      - SIGNOZ_DB_URL=sqlite:///signoz.db
-    volumes:
-      - signoz-data:/var/lib/signoz
-    networks:
-      - recaptcha-network
-    restart: unless-stopped
+      - SIGNOZ_API_URL=http://signoz-query-service:8080
+    depends_on:
+      - signoz-query-service
+
+  signoz-query-service:
+    image: signoz/query-service:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - STORAGE_BACKEND=sqlite
+      - SQLITE_STORAGE_PATH=/var/lib/signoz/signoz.db
 
 volumes:
-  redis-data:
-  signoz-data:
-
-networks:
-  recaptcha-network:
-    driver: bridge 
+  redis_data: 
