@@ -13,6 +13,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// Context key type for request ID
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
 // Handler handles HTTP requests
 type Handler struct {
 	service *service.Service
@@ -147,7 +152,7 @@ func (h *Handler) requestIDMiddleware() gin.HandlerFunc {
 		c.Set("request_id", requestID)
 
 		// Add to context for tracing
-		ctx := context.WithValue(c.Request.Context(), "request_id", requestID)
+		ctx := context.WithValue(c.Request.Context(), requestIDKey, requestID)
 		c.Request = c.Request.WithContext(ctx)
 
 		c.Next()
@@ -225,25 +230,6 @@ func generateRequestID() string {
 	return fmt.Sprintf("req_%d", time.Now().UnixNano())
 }
 
-// ErrorResponse represents an error response
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Code    string `json:"code,omitempty"`
-	Details string `json:"details,omitempty"`
-}
 
-// sendError sends an error response
-func (h *Handler) sendError(c *gin.Context, statusCode int, error, code, details string) {
-	response := ErrorResponse{
-		Error:   error,
-		Code:    code,
-		Details: details,
-	}
 
-	c.JSON(statusCode, response)
-}
-
-// sendSuccess sends a success response
-func (h *Handler) sendSuccess(c *gin.Context, data interface{}) {
-	c.JSON(http.StatusOK, data)
-} 
+ 

@@ -27,6 +27,7 @@
             go-tools
             gotools
             air
+            golangci-lint
           ];
 
           shellHook = ''
