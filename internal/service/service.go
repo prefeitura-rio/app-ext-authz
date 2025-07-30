@@ -230,14 +230,16 @@ func (s *Service) validateWithGoogle(ctx context.Context, token string) (*recapt
 	}
 
 	// Log validation
-	s.telemetry.LogValidation(
-		"", // requestID will be set by caller
-		token,
-		result.IsValidToken(),
-		result.GetScore(),
-		result.ErrorCodes,
-		duration,
-	)
+	if s.telemetry != nil {
+		s.telemetry.LogValidation(
+			"", // requestID will be set by caller
+			token,
+			result.IsValidToken(),
+			result.GetScore(),
+			result.ErrorCodes,
+			duration,
+		)
+	}
 
 	return result, err
 }
@@ -263,7 +265,9 @@ func (s *Service) cacheResult(ctx context.Context, key string, result *recaptcha
 
 	// Cache the result
 	if err := s.cache.Set(ctx, key, cacheResult, ttl); err != nil {
-		s.telemetry.Logger.WithError(err).Warn("Failed to cache validation result")
+		if s.telemetry != nil {
+			s.telemetry.Logger.WithError(err).Warn("Failed to cache validation result")
+		}
 	}
 }
 
