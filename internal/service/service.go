@@ -427,6 +427,14 @@ func (s *Service) GetMetrics() map[string]interface{} {
 	}
 }
 
+// GetCircuitBreakerState returns the current circuit breaker state as a string
+func (s *Service) GetCircuitBreakerState() string {
+	if s.circuitBreaker != nil {
+		return s.circuitBreaker.GetStateString()
+	}
+	return "unknown"
+}
+
 // Shutdown gracefully shuts down the service
 func (s *Service) Shutdown(ctx context.Context) error {
 	if s.telemetry != nil {

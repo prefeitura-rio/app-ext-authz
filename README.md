@@ -132,8 +132,17 @@ The service implements the Envoy `ext_authz` filter interface, supporting both H
 - **403 Forbidden**: Request denied
 
 **Response Headers:**
+
+**Standard Envoy Headers:**
 - `X-Ext-Authz-Check-Result`: `allowed|denied`
 - `X-Ext-Authz-Check-Received`: Request details
+
+**Enhanced reCAPTCHA Headers:**
+- `X-Recaptcha-Status`: Validation status (`valid`, `malformed`, `expired`, `degraded`, `circuit_breaker_open`)
+- `X-Recaptcha-Score`: reCAPTCHA score (0.0-1.0, only for valid tokens)
+- `X-Recaptcha-Cache`: Cache status (`hit` or `miss`)
+- `X-Recaptcha-Service-Health`: Service health (`healthy` or `degraded`)
+- `X-Recaptcha-Circuit-Breaker-State`: Circuit breaker state (`closed`, `open`, `half_open`, only when degraded)
 
 ## Envoy Configuration
 
@@ -159,6 +168,11 @@ http_filters:
           patterns:
           - exact: "x-ext-authz-check-result"
           - exact: "x-ext-authz-check-received"
+          - exact: "x-recaptcha-status"
+          - exact: "x-recaptcha-score"
+          - exact: "x-recaptcha-cache"
+          - exact: "x-recaptcha-service-health"
+          - exact: "x-recaptcha-circuit-breaker-state"
 ```
 
 ### gRPC Mode
@@ -231,6 +245,18 @@ curl -X POST http://localhost:8000 \
   -v
 ```
 
+**Example Response Headers:**
+```
+HTTP/1.1 403 Forbidden
+X-Ext-Authz-Check-Result: denied
+X-Recaptcha-Status: malformed
+X-Recaptcha-Cache: miss
+X-Recaptcha-Service-Health: healthy
+Content-Type: text/plain; charset=utf-8
+
+denied by ext_authz: invalid reCAPTCHA token format
+```
+
 **Test with justfile:**
 ```bash
 just test-curl-http
@@ -298,6 +324,29 @@ Key metrics available:
 - `recaptcha_cache_hits_total`: Cache hit rate
 - `recaptcha_google_api_duration_seconds`: Google API response time
 - `recaptcha_circuit_breaker_state`: Circuit breaker status
+
+### Service Health Monitoring
+
+The service provides enhanced visibility into its operational state through response headers:
+
+**Normal Operation:**
+```
+X-Recaptcha-Service-Health: healthy
+X-Recaptcha-Status: malformed/expired/valid
+```
+
+**Service Degradation (fail-open mode):**
+```
+X-Recaptcha-Service-Health: degraded
+X-Recaptcha-Circuit-Breaker-State: open
+X-Recaptcha-Status: degraded
+```
+
+**Monitoring Recommendations:**
+- Alert on `X-Recaptcha-Service-Health: degraded`
+- Monitor circuit breaker state transitions
+- Track cache hit rates for performance optimization
+- Use `X-Recaptcha-Status` to distinguish between token issues and service problems
 
 ### Alerts
 

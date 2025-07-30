@@ -108,6 +108,100 @@ func (s *ExtAuthzServer) deny(request *authv3.CheckRequest) *authv3.CheckRespons
 	}
 }
 
+func (s *ExtAuthzServer) denyWithDetails(request *authv3.CheckRequest, authResponse *service.AuthorizationResponse) *authv3.CheckResponse {
+	s.logRequest("denied", request)
+	
+	// Create headers with detailed information
+	headers := []*corev3.HeaderValueOption{
+		{
+			Header: &corev3.HeaderValue{
+				Key:   resultHeader,
+				Value: resultDenied,
+			},
+		},
+		{
+			Header: &corev3.HeaderValue{
+				Key:   receivedHeader,
+				Value: returnIfNotTooLong(request.GetAttributes().String()),
+			},
+		},
+		{
+			Header: &corev3.HeaderValue{
+				Key:   "X-Recaptcha-Status",
+				Value: authResponse.Status,
+			},
+		},
+	}
+	
+	// Add optional headers if present
+	if authResponse.Score != "" {
+		headers = append(headers, &corev3.HeaderValueOption{
+			Header: &corev3.HeaderValue{
+				Key:   "X-Recaptcha-Score",
+				Value: authResponse.Score,
+			},
+		})
+	}
+	
+	if authResponse.Cache != "" {
+		headers = append(headers, &corev3.HeaderValueOption{
+			Header: &corev3.HeaderValue{
+				Key:   "X-Recaptcha-Cache",
+				Value: authResponse.Cache,
+			},
+		})
+	}
+	
+	// Add service health information for degraded states
+	if authResponse.Status == "degraded" || authResponse.Status == "circuit_breaker_open" {
+		headers = append(headers, &corev3.HeaderValueOption{
+			Header: &corev3.HeaderValue{
+				Key:   "X-Recaptcha-Service-Health",
+				Value: "degraded",
+			},
+		})
+		headers = append(headers, &corev3.HeaderValueOption{
+			Header: &corev3.HeaderValue{
+				Key:   "X-Recaptcha-Circuit-Breaker-State",
+				Value: s.service.GetCircuitBreakerState(),
+			},
+		})
+	} else {
+		headers = append(headers, &corev3.HeaderValueOption{
+			Header: &corev3.HeaderValue{
+				Key:   "X-Recaptcha-Service-Health",
+				Value: "healthy",
+			},
+		})
+	}
+	
+	// Provide more accurate error message based on status
+	var errorMessage string
+	switch authResponse.Status {
+	case "malformed":
+		errorMessage = "denied by ext_authz: invalid reCAPTCHA token format"
+	case "timeout":
+		errorMessage = "denied by ext_authz: reCAPTCHA validation timeout"
+	case "degraded":
+		errorMessage = "denied by ext_authz: service degraded, validation failed"
+	case "circuit_breaker_open":
+		errorMessage = "denied by ext_authz: service temporarily unavailable"
+	default:
+		errorMessage = fmt.Sprintf("denied by ext_authz: %s", authResponse.Status)
+	}
+	
+	return &authv3.CheckResponse{
+		HttpResponse: &authv3.CheckResponse_DeniedResponse{
+			DeniedResponse: &authv3.DeniedHttpResponse{
+				Status: &typev3.HttpStatus{Code: typev3.StatusCode_Forbidden},
+				Body:   errorMessage,
+				Headers: headers,
+			},
+		},
+		Status: &status.Status{Code: int32(codes.PermissionDenied)},
+	}
+}
+
 // Check implements gRPC v3 check request.
 func (s *ExtAuthzServer) Check(ctx context.Context, request *authv3.CheckRequest) (*authv3.CheckResponse, error) {
 	attrs := request.GetAttributes()
@@ -143,7 +237,8 @@ func (s *ExtAuthzServer) Check(ctx context.Context, request *authv3.CheckRequest
 		return s.allow(request), nil
 	}
 
-	return s.deny(request), nil
+	// Create a custom deny response with detailed information
+	return s.denyWithDetails(request, response), nil
 }
 
 // ServeHTTP implements the HTTP check request.
@@ -195,8 +290,41 @@ func (s *ExtAuthzServer) ServeHTTP(response http.ResponseWriter, request *http.R
 		log.Printf("[HTTP][denied]: %s", l)
 		response.Header().Set(resultHeader, resultDenied)
 		response.Header().Set(receivedHeader, l)
+		
+		// Add detailed status information in headers
+		response.Header().Set("X-Recaptcha-Status", authResponse.Status)
+		if authResponse.Score != "" {
+			response.Header().Set("X-Recaptcha-Score", authResponse.Score)
+		}
+		if authResponse.Cache != "" {
+			response.Header().Set("X-Recaptcha-Cache", authResponse.Cache)
+		}
+		
+		// Add service health information for degraded states
+		if authResponse.Status == "degraded" || authResponse.Status == "circuit_breaker_open" {
+			response.Header().Set("X-Recaptcha-Service-Health", "degraded")
+			response.Header().Set("X-Recaptcha-Circuit-Breaker-State", s.service.GetCircuitBreakerState())
+		} else {
+			response.Header().Set("X-Recaptcha-Service-Health", "healthy")
+		}
+		
+		// Provide more accurate error message based on status
+		var errorMessage string
+		switch authResponse.Status {
+		case "malformed":
+			errorMessage = "denied by ext_authz: invalid reCAPTCHA token format"
+		case "timeout":
+			errorMessage = "denied by ext_authz: reCAPTCHA validation timeout"
+		case "degraded":
+			errorMessage = "denied by ext_authz: service degraded, validation failed"
+		case "circuit_breaker_open":
+			errorMessage = "denied by ext_authz: service temporarily unavailable"
+		default:
+			errorMessage = fmt.Sprintf("denied by ext_authz: %s", authResponse.Status)
+		}
+		
 		response.WriteHeader(http.StatusForbidden)
-		_, _ = response.Write([]byte(denyBody))
+		_, _ = response.Write([]byte(errorMessage))
 	}
 }
 
