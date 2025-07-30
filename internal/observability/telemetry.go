@@ -48,6 +48,17 @@ func NewTelemetry(config Config) (*Telemetry, error) {
 		TimestampFormat: time.RFC3339,
 	})
 
+	// If no OTLP endpoint is provided, return basic telemetry with just logging
+	if config.OTelEndpoint == "" {
+		logger.Info("No OTLP endpoint provided, using basic logging only")
+		return &Telemetry{
+			Tracer:   nil,
+			Meter:    nil,
+			Logger:   logger,
+			Provider: nil,
+		}, nil
+	}
+
 	// Create resource
 	res, err := resource.New(context.Background(),
 		resource.WithAttributes(
@@ -57,70 +68,73 @@ func NewTelemetry(config Config) (*Telemetry, error) {
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create resource: %w", err)
+		logger.WithError(err).Warn("Failed to create OTLP resource, falling back to basic logging")
+		return &Telemetry{
+			Tracer:   nil,
+			Meter:    nil,
+			Logger:   logger,
+			Provider: nil,
+		}, nil
 	}
 
 	var provider *sdktrace.TracerProvider
-
-	// Setup tracing if endpoint is provided
-	if config.OTelEndpoint != "" {
-		// For gRPC, we need to strip any protocol prefix and just use host:port
-		endpoint := config.OTelEndpoint
-		endpoint = strings.TrimPrefix(endpoint, "grpc://")
-		endpoint = strings.TrimPrefix(endpoint, "http://")
-		endpoint = strings.TrimPrefix(endpoint, "https://")
-		
-		traceExporter, err := otlptracegrpc.New(
-			context.Background(),
-			otlptracegrpc.WithEndpoint(endpoint),
-			otlptracegrpc.WithInsecure(),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create trace exporter: %w", err)
-		}
-
-		provider = sdktrace.NewTracerProvider(
-			sdktrace.WithBatcher(traceExporter),
-			sdktrace.WithResource(res),
-		)
-
-		otel.SetTracerProvider(provider)
-	}
-
-	// Setup metrics if endpoint is provided
 	var meter metric.Meter
-	if config.OTelEndpoint != "" {
-		// For gRPC, we need to strip any protocol prefix and just use host:port
-		endpoint := config.OTelEndpoint
-		endpoint = strings.TrimPrefix(endpoint, "grpc://")
-		endpoint = strings.TrimPrefix(endpoint, "http://")
-		endpoint = strings.TrimPrefix(endpoint, "https://")
-		
-		// Create metric exporter
-		metricExporter, err := otlpmetricgrpc.New(
-			context.Background(),
-			otlpmetricgrpc.WithEndpoint(endpoint),
-			otlpmetricgrpc.WithInsecure(),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create metric exporter: %w", err)
-		}
 
-		// Create meter provider with the exporter
-		meterProvider := sdkmetric.NewMeterProvider(
-			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
-		)
-		
-		// Set as global meter provider
-		otel.SetMeterProvider(meterProvider)
-		
-		// Get meter from the provider
-		meter = meterProvider.Meter(config.ServiceName)
+	// Setup tracing
+	endpoint := strings.TrimPrefix(config.OTelEndpoint, "grpc://")
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+	endpoint = strings.TrimPrefix(endpoint, "https://")
+	
+	traceExporter, err := otlptracegrpc.New(
+		context.Background(),
+		otlptracegrpc.WithEndpoint(endpoint),
+		otlptracegrpc.WithInsecure(),
+	)
+	if err != nil {
+		logger.WithError(err).Warn("Failed to create trace exporter, falling back to basic logging")
+		return &Telemetry{
+			Tracer:   nil,
+			Meter:    nil,
+			Logger:   logger,
+			Provider: nil,
+		}, nil
 	}
 
-	// Create tracer
+	provider = sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(traceExporter),
+		sdktrace.WithResource(res),
+	)
+
+	// Setup metrics
+	metricExporter, err := otlpmetricgrpc.New(
+		context.Background(),
+		otlpmetricgrpc.WithEndpoint(endpoint),
+		otlpmetricgrpc.WithInsecure(),
+	)
+	if err != nil {
+		logger.WithError(err).Warn("Failed to create metric exporter, falling back to basic logging")
+		return &Telemetry{
+			Tracer:   nil,
+			Meter:    nil,
+			Logger:   logger,
+			Provider: provider, // Keep provider for tracing
+		}, nil
+	}
+
+	// Create meter provider with the exporter
+	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+	)
+	
+	// Set as global providers
+	otel.SetTracerProvider(provider)
+	otel.SetMeterProvider(meterProvider)
+	
+	// Get meter from the provider
+	meter = meterProvider.Meter(config.ServiceName)
 	tracer := otel.Tracer(config.ServiceName)
 
+	logger.Info("OpenTelemetry initialized successfully")
 	return &Telemetry{
 		Tracer:   tracer,
 		Meter:    meter,
