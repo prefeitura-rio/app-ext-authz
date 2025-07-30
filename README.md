@@ -5,12 +5,13 @@ A high-performance external authorization service for Envoy Proxy that validates
 ## Features
 
 - **Enterprise-grade security**: Google Cloud reCAPTCHA Enterprise integration
-- **High performance**: HTTP-based authorization with caching
+- **High performance**: HTTP/gRPC-based authorization with caching
 - **Resilient**: Circuit breaker pattern with graceful degradation
 - **Observable**: Full OpenTelemetry integration with traces, metrics, and logs
 - **Configurable**: Environment-based configuration
-- **Tested**: Comprehensive test suite with mocks
+- **Mock mode**: Development-friendly testing without Google API calls
 - **Containerized**: Ready for Kubernetes deployment
+- **Safe tracing**: Panic-protected OpenTelemetry integration
 
 ## Architecture
 
@@ -22,15 +23,18 @@ Client Request → Envoy Proxy → ext_authz Filter → This Service → Google 
                                               Circuit Breaker
                                                       ↓
                                               OpenTelemetry (SignOz)
+                                                      ↓
+                                              Service Account Auth
 ```
 
 ### Request Flow
 
 1. Client sends request with `X-Recaptcha-Token` header
 2. Envoy intercepts and calls this authorization service
-3. Service validates token with Google's reCAPTCHA Enterprise API
-4. Returns ALLOW/DENY decision to Envoy
-5. Envoy forwards or blocks the request accordingly
+3. Service authenticates with Google Cloud using service account
+4. Service validates token with Google's reCAPTCHA Enterprise API
+5. Returns ALLOW/DENY decision to Envoy
+6. Envoy forwards or blocks the request accordingly
 
 ## Configuration
 
@@ -42,6 +46,7 @@ Client Request → Envoy Proxy → ext_authz Filter → This Service → Google 
 | `RECAPTCHA_SITE_KEY` | reCAPTCHA site key | - | Yes |
 | `RECAPTCHA_ACTION` | Expected action name | authz | No |
 | `RECAPTCHA_V3_THRESHOLD` | Score threshold (0.0-1.0) for Enterprise | 0.5 | No |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | Base64 encoded service account JSON | - | Yes |
 | `GOOGLE_API_TIMEOUT_SECONDS` | Timeout for Google API calls | 5 | No |
 | `CACHE_TTL_SECONDS` | Cache TTL for successful validations | 30 | No |
 | `CACHE_FAILED_TTL_SECONDS` | Cache TTL for failed validations | 300 | No |
@@ -51,10 +56,10 @@ Client Request → Envoy Proxy → ext_authz Filter → This Service → Google 
 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | Failures before opening circuit | 5 | No |
 | `CIRCUIT_BREAKER_RECOVERY_TIME_SECONDS` | Recovery time for circuit breaker | 60 | No |
 | `HEALTH_CHECK_INTERVAL_SECONDS` | Health check interval | 30 | No |
-| `OTEL_ENDPOINT` | OpenTelemetry endpoint | - | No |
+| `OTEL_ENDPOINT` | OpenTelemetry endpoint (gRPC) | - | No |
 | `OTEL_SERVICE_NAME` | Service name for telemetry | recaptcha-authz | No |
 | `LOG_LEVEL` | Log level (debug, info, warn, error) | info | No |
-| `PORT` | HTTP server port | 8080 | No |
+| `MOCK_MODE` | Enable mock mode for development | false | No |
 
 ### Example Configuration
 
@@ -63,13 +68,45 @@ RECAPTCHA_PROJECT_ID=your-project-id
 RECAPTCHA_SITE_KEY=your_site_key_here
 RECAPTCHA_ACTION=authz
 RECAPTCHA_V3_THRESHOLD=0.7
+GOOGLE_SERVICE_ACCOUNT_KEY=eyJ0eXBlIjoic2VydmljZV9hY2NvdW50Iiwi...
 GOOGLE_API_TIMEOUT_SECONDS=5
 CACHE_TTL_SECONDS=30
 REDIS_URL=redis://localhost:6379
 FAILURE_MODE=fail_open
 CIRCUIT_BREAKER_ENABLED=true
-OTEL_ENDPOINT=http://signoz:4317
+OTEL_ENDPOINT=signoz:4317
+MOCK_MODE=false
 ```
+
+### Service Account Setup
+
+The service requires a Google Cloud service account with reCAPTCHA Enterprise permissions:
+
+1. **Create service account:**
+   ```bash
+   gcloud iam service-accounts create recaptcha-authz \
+       --display-name="reCAPTCHA Authorization Service"
+   ```
+
+2. **Grant reCAPTCHA Enterprise permissions:**
+   ```bash
+   gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+       --member="serviceAccount:recaptcha-authz@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+       --role="roles/recaptchaenterprise.agent"
+   ```
+
+3. **Create and encode service account key:**
+   ```bash
+   gcloud iam service-accounts keys create key.json \
+       --iam-account=recaptcha-authz@YOUR_PROJECT_ID.iam.gserviceaccount.com
+   
+   base64 -i key.json | tr -d '\n'
+   ```
+
+4. **Set environment variable:**
+   ```bash
+   export GOOGLE_SERVICE_ACCOUNT_KEY="eyJ0eXBlIjoic2VydmljZV9hY2NvdW50Iiwi..."
+   ```
 
 ## API Endpoints
 
@@ -142,9 +179,10 @@ http_filters:
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.24+
 - Docker
 - Nix (for development environment)
+- Google Cloud service account with reCAPTCHA Enterprise permissions
 
 ### Local Development
 
@@ -174,6 +212,8 @@ http_filters:
    ```bash
    just run-mock
    ```
+   
+   Mock mode bypasses Google API calls and uses predefined responses for testing.
 
 4. **Run with Docker:**
    ```bash
@@ -189,6 +229,12 @@ The service can be tested using curl or grpcurl:
 curl -X POST http://localhost:8000 \
   -H "X-Recaptcha-Token: your_token_here" \
   -v
+```
+
+**Test with justfile:**
+```bash
+just test-curl-http
+just test-curl-grpc
 ```
 
 **gRPC Mode (requires grpcurl):**
@@ -213,21 +259,22 @@ docker build -t recaptcha-authz .
 docker run -p 8000:8000 -p 9000:9000 \
   -e RECAPTCHA_PROJECT_ID=your-project-id \
   -e RECAPTCHA_SITE_KEY=your_site_key \
+  -e GOOGLE_SERVICE_ACCOUNT_KEY=eyJ0eXBlIjoic2VydmljZV9hY2NvdW50Iiwi... \
   -e RECAPTCHA_ACTION=authz \
   recaptcha-authz --http=8000 --grpc=9000
 ```
 
 ### Kubernetes
 
-1. **Create secret (if needed for additional configuration):**
+1. **Create secret with service account key:**
    ```yaml
    apiVersion: v1
    kind: Secret
    metadata:
-     name: recaptcha-config
+     name: recaptcha-authz-secrets
    type: Opaque
    data:
-     # Add any additional secrets if needed
+     google-service-account-key: <base64-encoded-service-account-json>
    ```
 
 2. **Deploy service:**
@@ -276,12 +323,30 @@ When Google API is unavailable:
 - Continue serving requests to prevent complete outage
 - Monitor and alert on degraded state
 
+## Recent Improvements
+
+### Safe Tracing
+- **Panic protection**: OpenTelemetry integration with comprehensive panic recovery
+- **Graceful degradation**: Service continues working even if telemetry fails
+- **Nil checks**: Robust handling of nil pointers throughout the codebase
+
+### Service Account Authentication
+- **Base64 encoding**: Kubernetes-friendly service account key storage
+- **Automatic decoding**: Service automatically decodes and uses service account credentials
+- **Permission management**: Clear documentation for required IAM roles
+
+### Error Handling
+- **Nil pointer protection**: Comprehensive nil checks in reCAPTCHA validation
+- **Circuit breaker safety**: Enhanced circuit breaker with proper state management
+- **Graceful failures**: Service handles all error scenarios without panicking
+
 ## Security Considerations
 
 - **Secret management**: Use Kubernetes secrets for sensitive data
 - **Network security**: Restrict access to authorization service
 - **Rate limiting**: Implement at Envoy level
 - **Monitoring**: Monitor for abuse and unusual patterns
+- **Service account security**: Rotate service account keys regularly
 
 ## Contributing
 
