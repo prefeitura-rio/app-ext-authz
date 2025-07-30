@@ -267,7 +267,7 @@ func (s *Service) validateWithGoogle(ctx context.Context, token string) (*recapt
 	// Record metrics
 	if s.metrics != nil {
 		s.metrics.GoogleAPIDuration.Record(ctx, duration.Seconds())
-		if err == nil && result.IsValidToken() {
+		if err == nil && result != nil && result.IsValidToken() {
 			s.metrics.ValidationSuccess.Add(ctx, 1)
 		} else {
 			s.metrics.ValidationFailure.Add(ctx, 1)
@@ -275,7 +275,7 @@ func (s *Service) validateWithGoogle(ctx context.Context, token string) (*recapt
 	}
 
 	// Log validation
-	if s.telemetry != nil {
+	if s.telemetry != nil && result != nil {
 		s.telemetry.LogValidation(
 			"", // requestID will be set by caller
 			token,

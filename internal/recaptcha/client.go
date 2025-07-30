@@ -214,16 +214,25 @@ func (c *client) mockValidation(token string) (*ValidationResult, error) {
 
 // IsValidToken checks if a token is valid based on the validation result
 func (r *ValidationResult) IsValidToken() bool {
+	if r == nil {
+		return false
+	}
 	return r.Success && len(r.ErrorCodes) == 0
 }
 
 // GetScore returns the score for v3 validation
 func (r *ValidationResult) GetScore() float64 {
+	if r == nil {
+		return 0.0
+	}
 	return r.Score
 }
 
 // GetErrorCodes returns the error codes as a string
 func (r *ValidationResult) GetErrorCodes() string {
+	if r == nil {
+		return "nil-result"
+	}
 	if len(r.ErrorCodes) == 0 {
 		return ""
 	}
