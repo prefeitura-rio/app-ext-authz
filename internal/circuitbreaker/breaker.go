@@ -59,13 +59,19 @@ type Breaker struct {
 // NewBreaker creates a new circuit breaker
 func NewBreaker(config Config) *Breaker {
 	return &Breaker{
-		config: config,
-		state:  StateClosed,
+		config:         config,
+		state:          StateClosed,
+		lastFailureTime: time.Now(), // Initialize with current time
 	}
 }
 
 // Execute executes a function with circuit breaker protection
 func (b *Breaker) Execute(ctx context.Context, fn func() error) error {
+	// Safety check
+	if b == nil {
+		return fmt.Errorf("circuit breaker is nil")
+	}
+
 	// Check if we can execute
 	if !b.canExecute() {
 		return fmt.Errorf("circuit breaker is open")
@@ -92,6 +98,10 @@ func (b *Breaker) Execute(ctx context.Context, fn func() error) error {
 
 // canExecute checks if the circuit breaker allows execution
 func (b *Breaker) canExecute() bool {
+	if b == nil {
+		return false
+	}
+
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
@@ -116,6 +126,10 @@ func (b *Breaker) canExecute() bool {
 
 // recordRequest records a request attempt
 func (b *Breaker) recordRequest() {
+	if b == nil {
+		return
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
