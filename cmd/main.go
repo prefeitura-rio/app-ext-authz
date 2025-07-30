@@ -207,6 +207,11 @@ func (s *ExtAuthzServer) Check(ctx context.Context, request *authv3.CheckRequest
 	attrs := request.GetAttributes()
 	httpAttrs := attrs.GetRequest().GetHttp()
 
+	// Allow OPTIONS requests (CORS preflight) without requiring reCAPTCHA token
+	if httpAttrs.GetMethod() == "OPTIONS" {
+		return s.allow(request), nil
+	}
+
 	// Extract reCAPTCHA token from headers
 	token := ""
 	if headers := httpAttrs.GetHeaders(); headers != nil {
@@ -249,6 +254,15 @@ func (s *ExtAuthzServer) ServeHTTP(response http.ResponseWriter, request *http.R
 	}
 
 	l := fmt.Sprintf("%s %s%s, headers: %v, body: [%s]\n", request.Method, request.Host, request.URL, request.Header, returnIfNotTooLong(string(body)))
+
+	// Allow OPTIONS requests (CORS preflight) without requiring reCAPTCHA token
+	if request.Method == "OPTIONS" {
+		log.Printf("[HTTP][allowed]: %s", l)
+		response.Header().Set(resultHeader, resultAllowed)
+		response.Header().Set(receivedHeader, l)
+		response.WriteHeader(http.StatusOK)
+		return
+	}
 
 	// Extract reCAPTCHA token from header
 	token := request.Header.Get(recaptchaTokenHeader)
