@@ -3,12 +3,13 @@ package observability
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -63,10 +64,16 @@ func NewTelemetry(config Config) (*Telemetry, error) {
 
 	// Setup tracing if endpoint is provided
 	if config.OTelEndpoint != "" {
-		traceExporter, err := otlptracehttp.New(
+		// Parse endpoint to handle both with and without protocol
+		endpoint := config.OTelEndpoint
+		if !strings.HasPrefix(endpoint, "grpc://") && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+			endpoint = "grpc://" + endpoint
+		}
+		
+		traceExporter, err := otlptracegrpc.New(
 			context.Background(),
-			otlptracehttp.WithEndpoint(config.OTelEndpoint),
-			otlptracehttp.WithInsecure(),
+			otlptracegrpc.WithEndpoint(endpoint),
+			otlptracegrpc.WithInsecure(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create trace exporter: %w", err)
@@ -83,11 +90,17 @@ func NewTelemetry(config Config) (*Telemetry, error) {
 	// Setup metrics if endpoint is provided
 	var meter metric.Meter
 	if config.OTelEndpoint != "" {
+		// Parse endpoint to handle both with and without protocol
+		endpoint := config.OTelEndpoint
+		if !strings.HasPrefix(endpoint, "grpc://") && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+			endpoint = "grpc://" + endpoint
+		}
+		
 		// Create metric exporter
-		metricExporter, err := otlpmetrichttp.New(
+		metricExporter, err := otlpmetricgrpc.New(
 			context.Background(),
-			otlpmetrichttp.WithEndpoint(config.OTelEndpoint),
-			otlpmetrichttp.WithInsecure(),
+			otlpmetricgrpc.WithEndpoint(endpoint),
+			otlpmetricgrpc.WithInsecure(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create metric exporter: %w", err)

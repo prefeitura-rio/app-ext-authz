@@ -20,7 +20,7 @@ services:
       - CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
       - CIRCUIT_BREAKER_RECOVERY_TIME_SECONDS=60
       - HEALTH_CHECK_INTERVAL_SECONDS=30
-      - OTEL_ENDPOINT=http://signoz-collector:4317
+      - OTEL_ENDPOINT=signoz-collector:4317
       - OTEL_SERVICE_NAME=recaptcha-authz
       - LOG_LEVEL=debug
       - MOCK_MODE=true
@@ -40,7 +40,7 @@ services:
   signoz-collector:
     image: signoz/signoz-otel-collector:latest
     ports:
-      - "4317:4317"
+      - "4317:4317"  # gRPC OTLP endpoint
     environment:
       - SIGNOZ_API_URL=http://signoz-query-service:8080
     depends_on:
