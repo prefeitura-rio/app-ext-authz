@@ -66,22 +66,17 @@ func NewBreaker(config Config) *Breaker {
 
 // Execute executes a function with circuit breaker protection
 func (b *Breaker) Execute(ctx context.Context, fn func() error) error {
-	// Check if we can execute and if we need to transition to half-open
-	canExec := b.canExecute()
-	if !canExec {
+	// Check if we can execute
+	if !b.canExecute() {
 		return fmt.Errorf("circuit breaker is open")
 	}
 
-	// If we're in open state but canExecute returned true, we need to transition to half-open
-	b.mu.RLock()
-	currentState := b.state
-	b.mu.RUnlock()
-	
-	if currentState == StateOpen {
-		b.mu.Lock()
+	// Handle transition from open to half-open if needed
+	b.mu.Lock()
+	if b.state == StateOpen {
 		b.transitionToHalfOpen()
-		b.mu.Unlock()
 	}
+	b.mu.Unlock()
 
 	b.recordRequest()
 

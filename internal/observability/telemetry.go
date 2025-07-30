@@ -64,11 +64,11 @@ func NewTelemetry(config Config) (*Telemetry, error) {
 
 	// Setup tracing if endpoint is provided
 	if config.OTelEndpoint != "" {
-		// Parse endpoint to handle both with and without protocol
+		// For gRPC, we need to strip any protocol prefix and just use host:port
 		endpoint := config.OTelEndpoint
-		if !strings.HasPrefix(endpoint, "grpc://") && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-			endpoint = "grpc://" + endpoint
-		}
+		endpoint = strings.TrimPrefix(endpoint, "grpc://")
+		endpoint = strings.TrimPrefix(endpoint, "http://")
+		endpoint = strings.TrimPrefix(endpoint, "https://")
 		
 		traceExporter, err := otlptracegrpc.New(
 			context.Background(),
@@ -90,11 +90,11 @@ func NewTelemetry(config Config) (*Telemetry, error) {
 	// Setup metrics if endpoint is provided
 	var meter metric.Meter
 	if config.OTelEndpoint != "" {
-		// Parse endpoint to handle both with and without protocol
+		// For gRPC, we need to strip any protocol prefix and just use host:port
 		endpoint := config.OTelEndpoint
-		if !strings.HasPrefix(endpoint, "grpc://") && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-			endpoint = "grpc://" + endpoint
-		}
+		endpoint = strings.TrimPrefix(endpoint, "grpc://")
+		endpoint = strings.TrimPrefix(endpoint, "http://")
+		endpoint = strings.TrimPrefix(endpoint, "https://")
 		
 		// Create metric exporter
 		metricExporter, err := otlpmetricgrpc.New(
