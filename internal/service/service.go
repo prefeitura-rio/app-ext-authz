@@ -109,16 +109,38 @@ func (s *Service) Authorize(ctx context.Context, req *AuthorizationRequest) (*Au
 	startTime := time.Now()
 	requestID := generateRequestID()
 
-	// Create span for tracing if tracer is available
+	// Safe tracing with panic protection
 	var span trace.Span
-	if s.telemetry != nil && s.telemetry.Tracer != nil {
-		ctx, span = s.telemetry.Tracer.Start(ctx, "authorize",
-			trace.WithAttributes(
-				attribute.String("request_id", requestID),
-				attribute.Int("token_length", len(req.Token)),
-			),
-		)
-		defer span.End()
+	if s.telemetry != nil && s.telemetry.Tracer != nil && s.telemetry.Provider != nil && s.telemetry.Meter != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Log the panic but don't crash the service
+					if s.telemetry != nil && s.telemetry.Logger != nil {
+						s.telemetry.Logger.WithField("panic", r).Error("Tracing panic recovered, continuing without tracing")
+					}
+				}
+			}()
+			ctx, span = s.telemetry.Tracer.Start(ctx, "authorize",
+				trace.WithAttributes(
+					attribute.String("request_id", requestID),
+					attribute.Int("token_length", len(req.Token)),
+				),
+			)
+		}()
+		if span != nil {
+			defer func() {
+				defer func() {
+					if r := recover(); r != nil {
+						// Log the panic but don't crash the service
+						if s.telemetry != nil && s.telemetry.Logger != nil {
+							s.telemetry.Logger.WithField("panic", r).Error("Span.End() panic recovered")
+						}
+					}
+				}()
+				span.End()
+			}()
+		}
 	}
 
 	// Record metrics
@@ -209,10 +231,33 @@ func (s *Service) Authorize(ctx context.Context, req *AuthorizationRequest) (*Au
 
 // validateWithGoogle validates the token with Google's reCAPTCHA API
 func (s *Service) validateWithGoogle(ctx context.Context, token string) (*recaptcha.ValidationResult, error) {
+	// Safe tracing with panic protection
 	var span trace.Span
-	if s.telemetry != nil && s.telemetry.Tracer != nil {
-		ctx, span = s.telemetry.Tracer.Start(ctx, "validate_with_google")
-		defer span.End()
+	if s.telemetry != nil && s.telemetry.Tracer != nil && s.telemetry.Provider != nil && s.telemetry.Meter != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Log the panic but don't crash the service
+					if s.telemetry != nil && s.telemetry.Logger != nil {
+						s.telemetry.Logger.WithField("panic", r).Error("Tracing panic recovered, continuing without tracing")
+					}
+				}
+			}()
+			ctx, span = s.telemetry.Tracer.Start(ctx, "validate_with_google")
+		}()
+		if span != nil {
+			defer func() {
+				defer func() {
+					if r := recover(); r != nil {
+						// Log the panic but don't crash the service
+						if s.telemetry != nil && s.telemetry.Logger != nil {
+							s.telemetry.Logger.WithField("panic", r).Error("Span.End() panic recovered")
+						}
+					}
+				}()
+				span.End()
+			}()
+		}
 	}
 
 	startTime := time.Now()
