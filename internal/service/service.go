@@ -109,14 +109,17 @@ func (s *Service) Authorize(ctx context.Context, req *AuthorizationRequest) (*Au
 	startTime := time.Now()
 	requestID := generateRequestID()
 
-	// Create span for tracing
-	ctx, span := s.telemetry.Tracer.Start(ctx, "authorize",
-		trace.WithAttributes(
-			attribute.String("request_id", requestID),
-			attribute.Int("token_length", len(req.Token)),
-		),
-	)
-	defer span.End()
+	// Create span for tracing if tracer is available
+	var span trace.Span
+	if s.telemetry != nil && s.telemetry.Tracer != nil {
+		ctx, span = s.telemetry.Tracer.Start(ctx, "authorize",
+			trace.WithAttributes(
+				attribute.String("request_id", requestID),
+				attribute.Int("token_length", len(req.Token)),
+			),
+		)
+		defer span.End()
+	}
 
 	// Record metrics
 	if s.metrics != nil {
@@ -135,7 +138,9 @@ func (s *Service) Authorize(ctx context.Context, req *AuthorizationRequest) (*Au
 				s.metrics.CacheHits.Add(ctx, 1)
 			}
 
-			s.telemetry.LogCache("get", cacheKey, true, time.Since(startTime))
+			if s.telemetry != nil {
+				s.telemetry.LogCache("get", cacheKey, true, time.Since(startTime))
+			}
 
 			// Convert cache.ValidationResult to recaptcha.ValidationResult
 			recaptchaResult := s.convertCacheResult(cachedResult)
@@ -149,7 +154,9 @@ func (s *Service) Authorize(ctx context.Context, req *AuthorizationRequest) (*Au
 		s.metrics.CacheMisses.Add(ctx, 1)
 	}
 
-	s.telemetry.LogCache("get", cacheKey, false, time.Since(startTime))
+	if s.telemetry != nil {
+		s.telemetry.LogCache("get", cacheKey, false, time.Since(startTime))
+	}
 
 	// Check circuit breaker
 	if s.config.CircuitBreakerEnabled && s.circuitBreaker.IsOpen() {
@@ -202,8 +209,11 @@ func (s *Service) Authorize(ctx context.Context, req *AuthorizationRequest) (*Au
 
 // validateWithGoogle validates the token with Google's reCAPTCHA API
 func (s *Service) validateWithGoogle(ctx context.Context, token string) (*recaptcha.ValidationResult, error) {
-	ctx, span := s.telemetry.Tracer.Start(ctx, "validate_with_google")
-	defer span.End()
+	var span trace.Span
+	if s.telemetry != nil && s.telemetry.Tracer != nil {
+		ctx, span = s.telemetry.Tracer.Start(ctx, "validate_with_google")
+		defer span.End()
+	}
 
 	startTime := time.Now()
 	result, err := s.recaptchaClient.Validate(ctx, token)
@@ -315,15 +325,17 @@ func (s *Service) handleValidationError(err error) *AuthorizationResponse {
 
 // logRequest logs the request with telemetry
 func (s *Service) logRequest(requestID, token, status string, cacheHit bool, responseTime time.Duration, err error) {
-	s.telemetry.LogRequest(observability.LogFields{
-		RequestID:     requestID,
-		Token:         token,
-		ValidationResult: status,
-		CacheHit:      cacheHit,
-		ResponseTime:  responseTime,
-		Error:         err,
-		CircuitBreakerState: s.circuitBreaker.GetStateString(),
-	})
+	if s.telemetry != nil {
+		s.telemetry.LogRequest(observability.LogFields{
+			RequestID:     requestID,
+			Token:         token,
+			ValidationResult: status,
+			CacheHit:      cacheHit,
+			ResponseTime:  responseTime,
+			Error:         err,
+			CircuitBreakerState: s.circuitBreaker.GetStateString(),
+		})
+	}
 }
 
 // GetHealth returns the health status of the service
@@ -367,7 +379,10 @@ func (s *Service) GetMetrics() map[string]interface{} {
 
 // Shutdown gracefully shuts down the service
 func (s *Service) Shutdown(ctx context.Context) error {
-	return s.telemetry.Shutdown(ctx)
+	if s.telemetry != nil {
+		return s.telemetry.Shutdown(ctx)
+	}
+	return nil
 }
 
 // generateRequestID generates a unique request ID
