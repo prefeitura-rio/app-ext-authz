@@ -15,6 +15,7 @@ type Config struct {
 	RecaptchaSiteKey      string
 	RecaptchaAction       string
 	RecaptchaV3Threshold  float64
+	GoogleServiceAccountKey string // Base64 encoded service account JSON
 
 	// Performance settings
 	GoogleAPITimeoutSeconds int
@@ -74,6 +75,11 @@ func Load() (*Config, error) {
 		config.RecaptchaSiteKey = siteKey
 	} else {
 		return nil, fmt.Errorf("RECAPTCHA_SITE_KEY is required")
+	}
+
+	// Load service account key from base64 encoded environment variable
+	if serviceAccountKey := os.Getenv("GOOGLE_SERVICE_ACCOUNT_KEY"); serviceAccountKey != "" {
+		config.GoogleServiceAccountKey = serviceAccountKey
 	}
 
 	// Optional settings

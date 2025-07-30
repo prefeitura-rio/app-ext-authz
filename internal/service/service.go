@@ -42,12 +42,13 @@ type AuthorizationResponse struct {
 func NewService(cfg *config.Config) (*Service, error) {
 	// Create reCAPTCHA client
 	recaptchaConfig := &recaptcha.Config{
-		ProjectID:   cfg.RecaptchaProjectID,
-		SiteKey:     cfg.RecaptchaSiteKey,
-		Action:      cfg.RecaptchaAction,
-		V3Threshold: cfg.RecaptchaV3Threshold,
-		Timeout:     time.Duration(cfg.GoogleAPITimeoutSeconds) * time.Second,
-		MockMode:    cfg.MockMode,
+		ProjectID:        cfg.RecaptchaProjectID,
+		SiteKey:          cfg.RecaptchaSiteKey,
+		Action:           cfg.RecaptchaAction,
+		V3Threshold:      cfg.RecaptchaV3Threshold,
+		Timeout:          time.Duration(cfg.GoogleAPITimeoutSeconds) * time.Second,
+		MockMode:         cfg.MockMode,
+		ServiceAccountKey: cfg.GoogleServiceAccountKey,
 	}
 	recaptchaClient := recaptcha.NewClient(recaptchaConfig)
 

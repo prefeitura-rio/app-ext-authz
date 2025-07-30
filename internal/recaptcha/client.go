@@ -2,12 +2,14 @@ package recaptcha
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
 
 	recaptcha "cloud.google.com/go/recaptchaenterprise/v2/apiv1"
 	recaptchapb "cloud.google.com/go/recaptchaenterprise/v2/apiv1/recaptchaenterprisepb"
+	"google.golang.org/api/option"
 )
 
 // Client handles reCAPTCHA validation
@@ -35,6 +37,7 @@ type Config struct {
 	V3Threshold  float64
 	Timeout      time.Duration
 	MockMode     bool
+	ServiceAccountKey string // Base64 encoded service account JSON
 }
 
 // client implements the Client interface
@@ -46,7 +49,23 @@ type client struct {
 // NewClient creates a new reCAPTCHA client
 func NewClient(config *Config) Client {
 	ctx := context.Background()
-	recaptchaClient, err := recaptcha.NewClient(ctx)
+	
+	var opts []option.ClientOption
+	
+	// If service account key is provided, use it for authentication
+	if config.ServiceAccountKey != "" {
+		// Decode base64 service account key
+		decodedKey, err := base64.StdEncoding.DecodeString(config.ServiceAccountKey)
+		if err != nil {
+			panic(fmt.Sprintf("failed to decode service account key: %v", err))
+		}
+		
+		// Create credentials from service account JSON
+		creds := option.WithCredentialsJSON(decodedKey)
+		opts = append(opts, creds)
+	}
+	
+	recaptchaClient, err := recaptcha.NewClient(ctx, opts...)
 	if err != nil {
 		// In mock mode, we can continue without a real client
 		if config.MockMode {
